@@ -70,20 +70,6 @@ namespace ASlobodyanuk.VarCodeAnalyzer
             return result;
         }
 
-        private static void AnalyzeNode(SyntaxNodeAnalysisContext context)
-        {
-            var variable = context.Node as VariableDeclarationSyntax;
-            
-            if (variable != default && ShouldCreateDiagnostic(variable, context.SemanticModel))
-            {
-                var type = variable.Type;
-                var variableName = variable?.Variables.FirstOrDefault()?.Identifier.Text;
-
-                var diagnostic = Diagnostic.Create(Rule, type.GetLocation(), variableName);
-                context.ReportDiagnostic(diagnostic);
-            }
-        }
-
         private static async Task<Diagnostic> AnalyzeVariableNode(VariableDeclarationSyntax variable, SemanticModel model)
         {
             return await Task.Run(() =>
