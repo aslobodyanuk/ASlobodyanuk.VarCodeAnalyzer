@@ -38,7 +38,6 @@ namespace ASlobodyanuk.VarCodeAnalyzer
             context.EnableConcurrentExecution();
 
             context.RegisterSemanticModelAction(AnalyzeDocumentSemanticModel);
-            //context.RegisterSyntaxNodeAction(AnalyzeNode, SyntaxKind.VariableDeclaration);
         }
 
         private static void AnalyzeDocumentSemanticModel(SemanticModelAnalysisContext context)
