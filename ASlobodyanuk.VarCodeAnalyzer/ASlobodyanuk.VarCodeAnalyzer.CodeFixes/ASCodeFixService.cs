@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using ASlobodyanuk.Core;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
@@ -33,43 +34,73 @@ namespace ASlobodyanuk.VarCodeAnalyzer
             return await ChangeDeclaration(document, declaration, cancellationToken);
         }
 
-        private static async Task<Document> ChangeDeclaration(Document document, VariableDeclarationSyntax variable, CancellationToken cancellationToken)
+        private static async Task<Document> ChangeDeclaration<TNode>(Document document, TNode node, CancellationToken cancellationToken) where TNode : CSharpSyntaxNode
         {
             var semanticModel = await document.GetSemanticModelAsync();
-            var newVariable = GetReplacementNode(variable, semanticModel);
+            var newNode = GetReplacementNode(node, semanticModel);
 
             var oldRoot = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var newRoot = oldRoot.ReplaceNode(variable, newVariable);
+            var newRoot = oldRoot.ReplaceNode(node, newNode);
 
             return document.WithSyntaxRoot(newRoot);
         }
 
         private static VariableDeclarationSyntax GetReplacementNode(VariableDeclarationSyntax variable, SemanticModel semanticModel)
         {
-            var typeDeclarationSymbol = semanticModel?.GetSymbolInfo(variable.Type);
+            var typeDeclaration = variable.GetTypeString(semanticModel);
+            var identifierToken = variable.GetIdentifierToken();
 
-            var typeDeclaration = typeDeclarationSymbol?.Symbol?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+            return CreateNewNode(variable, typeDeclaration, identifierToken);
+        }
 
-            var identifierName = variable.Type as SimpleNameSyntax;
+        private static ForEachStatementSyntax GetReplacementNode(ForEachStatementSyntax statement, SemanticModel semanticModel)
+        {
+            var typeDeclaration = statement.GetTypeString(semanticModel);
+            var identifierToken = statement.GetIdentifierToken();
 
-            if (identifierName == default)
-                return variable;
+            return CreateNewNode(statement, typeDeclaration, identifierToken);
+        }
 
-            var identifierToken = identifierName.Identifier;
+        private static T CreateNewNode<T>(T node, string typeDeclaration, SyntaxToken? identifierToken) where T : CSharpSyntaxNode
+        {
+            if (identifierToken == default)
+                return node;
 
-            var newToken = SyntaxFactory.Identifier(identifierToken.LeadingTrivia, SyntaxKind.IdentifierToken, typeDeclaration, typeDeclaration, identifierToken.TrailingTrivia);
-            var newVariable = variable.ReplaceToken(identifierToken, newToken);
+            var newToken = SyntaxFactory.Identifier(identifierToken.Value.LeadingTrivia, SyntaxKind.IdentifierToken, typeDeclaration, typeDeclaration, identifierToken.Value.TrailingTrivia);
+            var newVariable = node.ReplaceToken(identifierToken.Value, newToken);
 
             return newVariable;
         }
 
-        private static VariableDeclarationSyntax GetDeclaration(Diagnostic diagnostic, SyntaxNode documentRoot)
+        private static TNode GetReplacementNode<TNode>(TNode node, SemanticModel semanticModel) where TNode : CSharpSyntaxNode
         {
-            return documentRoot.FindToken(diagnostic.Location.SourceSpan.End)
+            if (node is VariableDeclarationSyntax)
+                return GetReplacementNode(node as VariableDeclarationSyntax, semanticModel) as TNode;
+
+            if (node is ForEachStatementSyntax)
+                return GetReplacementNode(node as ForEachStatementSyntax, semanticModel) as TNode;
+
+            return node;
+        }
+
+        private static CSharpSyntaxNode GetDeclaration(Diagnostic diagnostic, SyntaxNode documentRoot)
+        {
+            var variable = documentRoot.FindToken(diagnostic.Location.SourceSpan.End)
                                 .Parent
                                 .AncestorsAndSelf()
                                 .OfType<VariableDeclarationSyntax>()
                                 .FirstOrDefault();
+
+            if (variable != default)
+                return variable;
+
+            var foreachNode = documentRoot.FindToken(diagnostic.Location.SourceSpan.End)
+                                .Parent
+                                .AncestorsAndSelf()
+                                .OfType<ForEachStatementSyntax>()
+                                .FirstOrDefault();
+
+            return foreachNode;
         }
     }
 }

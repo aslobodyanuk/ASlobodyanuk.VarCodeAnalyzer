@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\ASlobodyanuk.Core\ASlobodyanuk.Core.csproj" />
     <ProjectReference Include="..\ASlobodyanuk.VarCodeAnalyzer\ASlobodyanuk.VarCodeAnalyzer.csproj" />
   </ItemGroup>
 

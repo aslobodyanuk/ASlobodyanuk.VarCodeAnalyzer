@@ -1,5 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
+﻿using ASlobodyanuk.Core;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 using System.Collections.Immutable;
@@ -46,11 +46,11 @@ namespace ASlobodyanuk.VarCodeAnalyzer
             {
                 var root = await context.SemanticModel.SyntaxTree.GetRootAsync();
                 var variables = root.DescendantNodes().OfType<VariableDeclarationSyntax>();
+                var foreachStatements = root.DescendantNodes().OfType<ForEachStatementSyntax>();
 
-                Trace.TraceInformation($"{variables.Count()}");
-
+                var tasksForeach = foreachStatements.Select(x => AnalyzeForeachStatement(x, context.SemanticModel));
                 var tasks = variables.Select(x => AnalyzeVariableNode(x, context.SemanticModel));
-                var results = (await Task.WhenAll(tasks)).Where(x => x != null);
+                var results = (await Task.WhenAll(tasks.Concat(tasksForeach))).Where(x => x != null);
 
                 foreach (var diagnostic in results)
                     context.ReportDiagnostic(diagnostic);
@@ -60,14 +60,38 @@ namespace ASlobodyanuk.VarCodeAnalyzer
 
         private static bool ShouldCreateDiagnostic(VariableDeclarationSyntax variable, SemanticModel semanticModel)
         {
-            var typeDeclarationSymbol = semanticModel?.GetSymbolInfo(variable.Type);
+            var typeDeclaration = variable.GetTypeString(semanticModel);
+            var declarationText = variable.GetStringRepresentation();
 
-            var typeDeclaration = typeDeclarationSymbol?.Symbol?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-            var variableDeclaration = variable.ToString();
-
-            var result = ShouldBeExplicit(variableDeclaration, typeDeclaration);
+            var result = ShouldBeExplicit(declarationText, typeDeclaration);
 
             return result;
+        }
+
+        private static bool ShouldCreateDiagnostic(ForEachStatementSyntax statement, SemanticModel semanticModel)
+        {
+            var typeDeclaration = statement.GetTypeString(semanticModel);
+            var declarationText = statement.GetStringRepresentation();
+
+            var result = ShouldBeExplicit(declarationText, typeDeclaration);
+
+            return result;
+        }
+
+        private static async Task<Diagnostic> AnalyzeForeachStatement(ForEachStatementSyntax statement, SemanticModel model)
+        {
+            return await Task.Run(() =>
+            {
+                if (statement != default && ShouldCreateDiagnostic(statement, model))
+                {
+                    var type = statement.Type;
+                    var variableName = statement.Identifier.Text;
+
+                    return Diagnostic.Create(Rule, type.GetLocation(), variableName);
+                }
+
+                return null;
+            });
         }
 
         private static async Task<Diagnostic> AnalyzeVariableNode(VariableDeclarationSyntax variable, SemanticModel model)
@@ -110,6 +134,11 @@ namespace ASlobodyanuk.VarCodeAnalyzer
 
             //Casting with 'as'
             if (variableDeclaration.Contains($"as {typeDeclaration}"))
+                return false;
+
+            //foreach statement
+            if (variableDeclaration.Contains("foreach") && 
+                variableDeclaration.Contains($"({typeDeclaration}"))
                 return false;
 
             return true;
